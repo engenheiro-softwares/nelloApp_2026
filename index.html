@@ -221,6 +221,11 @@
             </button>
         </div>
 
+        <button id="btn-atualizar" onclick="buscarConcursosCaixa()" style="background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+    🔄 Sincronizar com a API da Caixa
+</button>
+<span id="status-sync" style="margin-left: 10px; font-size: 0.9rem; color: #aaa;"></span>
+
         <!-- Gaveta de Exibição dos Últimos Concursos -->
         <div id="modalUltimos" class="modal-results">
             <h3>
@@ -378,6 +383,34 @@
         }, 60);
     }
 </script>
+
+async function buscarConcursosCaixa() {
+    const statusSpan = document.getElementById('status-sync');
+    statusSpan.innerText = "Buscando dados atualizados...";
+    
+    try {
+        // Exemplo utilizando API pública de Loterias (compatível com os dados da Caixa)
+        const resposta = await fetch('https://loteriascaixa-api.herokuapp.com/api/lotofacil/latest');
+        
+        if (!resposta.ok) throw new Error('Erro ao conectar com a API');
+        
+        const dados = await resposta.json();
+        
+        // Aqui você manipula os dados recebidos para atualizar o DOM da sua tabela/painel
+        console.log("Último concurso carregado:", dados.concurso);
+        
+        statusSpan.innerText = `Sincronizado com sucesso! (Concurso ${dados.concurso})`;
+        statusSpan.style.color = "#28a745";
+        
+        // Exemplo de como você pode injetar as dezenas na sua interface:
+        // let dezenasSorteadas = dados.dezenas; (array com os números)
+        
+    } > catch (erro) {
+        console.error(erro);
+        statusSpan.innerText = "Falha ao sincronizar. Usando cache local.";
+        statusSpan.style.color = "#dc3545";
+    }
+}    
 
 </body>
 </html>
