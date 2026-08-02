@@ -383,7 +383,6 @@
         }, 60);
     }
 </script>
-
 async function buscarConcursosCaixa() {
     const statusSpan = document.getElementById('status-sync');
     statusSpan.innerText = "Buscando dados atualizados...";
@@ -405,7 +404,7 @@ async function buscarConcursosCaixa() {
         // Exemplo de como você pode injetar as dezenas na sua interface:
         // let dezenasSorteadas = dados.dezenas; (array com os números)
         
-    } > catch (erro) {
+    } catch (erro) {
         console.error(erro);
         statusSpan.innerText = "Falha ao sincronizar. Usando cache local.";
         statusSpan.style.color = "#dc3545";
