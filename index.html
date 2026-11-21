@@ -446,42 +446,72 @@
         container.innerHTML = html;
     }
 
-    // Função real de requisição à API oficial da Caixa / Loterias
-    async function buscarDadosReaisCaixa() {
-        const statusBadge = document.getElementById('statusBanco');
-        statusBadge.innerHTML = '🔄 Consultando API oficial da Caixa...';
-        statusBadge.style.color = '#38bdf8';
+   // Função real de requisição à API oficial da Caixa / Loterias
+async function consultarConcursoLotofacil(numeroConcurso = null) {
+  const baseUrl = "https://loteriascaixa-api.herokuapp.com/api/lotofacil";
+  const endpoint = numeroConcurso ? `${baseUrl}/${numeroConcurso}` : `${baseUrl}/latest`;
+  const response = await fetch(endpoint, { cache: "no-store" });
 
-        try {
-            // Requisição aberta a endpoints públicos que indexam em tempo real os dados da Caixa
-            const response = await fetch('https://loteriascaixa-api.herokuapp.com/api/lotofacil/latest');
-            if (!response.ok) throw new Error('Erro de conexão com API');
-            
-            const data = await response.json();
-            const concursoReal = data.concurso;
-            const dezenasReais = data.dezenas.map(n => parseInt(n, 10)).sort((a, b) => a - b);
+  if (!response.ok) {
+    throw new Error(`Erro de rede com API (${response.status})`);
+  }
 
-            // Adiciona ao topo se for novo
-            if (!baseHistoricaCaixa.some(c => c.concurso === concursoReal)) {
-                baseHistoricaCaixa.unshift({
-                    "concurso": concursoReal,
-                    "dezenas": dezenasReais
-                });
-            }
+  const data = await response.json();
+  const concursoReal = Number(data.concurso ?? data.numero);
+  const dezenasReais = (data.dezenas || data.listaDezenas || [])
+    .map((n) => parseInt(n, 10))
+    .filter((n) => !Number.isNaN(n))
+    .sort((a, b) => a - b);
 
-            renderizarTop3Sorteios();
-            statusBadge.innerHTML = `✅ Sincronizado: Concurso ${concursoReal} (Caixa Oficial)`;
-            statusBadge.style.color = 'var(--success-green)';
-        } catch (error) {
-            // Fallback inteligente caso a rede bloqueie APIs externas de terceiros: simulação com notificação de sucesso garantindo o 3747+
-            setTimeout(() => {
-                renderizarTop3Sorteios();
-                statusBadge.innerHTML = '✅ Dados validados com sucesso (Caixa.gov.br)';
-                statusBadge.style.color = 'var(--success-green)';
-            }, 600);
-        }
+  if (!concursoReal || dezenasReais.length !== 15) {
+    throw new Error("Dados incompletos retornados pela API");
+  }
+
+  return { concurso: concursoReal, dezenas: dezenasReais };
+}
+
+function mesclarBaseHistorica(sorteiosOficiais) {
+  const mapaConcursos = new Map();
+
+  [...sorteiosOficiais, ...baseHistoricaCaixa].forEach((item) => {
+    const numero = Number(item.concurso);
+    if (!mapaConcursos.has(numero)) {
+      mapaConcursos.set(numero, {
+        concurso: numero,
+        dezenas: [...item.dezenas].sort((a, b) => a - b),
+      });
     }
+  });
 
+  baseHistoricaCaixa = Array.from(mapaConcursos.values())
+    .sort((a, b) => b.concurso - a.concurso);
+}
+
+async function buscarDadosReaisCaixa() {
+  const statusBadge = document.getElementById("statusBanco");
+  statusBadge.innerHTML = "🔄 Consultando API oficial da Caixa...";
+  statusBadge.style.color = "#38bdf8";
+
+  try {
+    const ultimo = await consultarConcursoLotofacil();
+    const [anterior1, anterior2] = await Promise.all([
+      consultarConcursoLotofacil(ultimo.concurso - 1),
+      consultarConcursoLotofacil(ultimo.concurso - 2),
+    ]);
+
+    mesclarBaseHistorica([ultimo, anterior1, anterior2]);
+    renderizarTop3Sorteios();
+
+    statusBadge.innerHTML = `✅ Sincronizado: ${ultimo.concurso}, ${anterior1.concurso} e ${anterior2.concurso}`;
+    statusBadge.style.color = "var(--success-green)";
+  } catch (error) {
+    console.warn("Falha na consulta externa da API:", error);
+    renderizarTop3Sorteios();
+    statusBadge.innerHTML = "⚠️ Falha na API externa — exibindo base atual";
+    statusBadge.style.color = "#fbbf24";
+  }
+}
+           
     const primosFixos = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23]);
 
     function calcularAcertos(j, s) {
