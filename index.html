@@ -404,18 +404,187 @@
 
 <script>
     // Base inicial atualizada com precisão (Iniciando no concurso 3747 e anteriores)
-    let baseHistoricaCaixa = [
-        {"concurso": 3747, "dezenas": [1, 2, 5, 7, 8, 11, 13, 14, 16, 17, 19, 21, 22, 24, 25]},
-        {"concurso": 3746, "dezenas": [2, 3, 5, 6, 9, 11, 12, 14, 15, 17, 19, 21, 23, 24, 25]},
-        {"concurso": 3745, "dezenas": [1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 17, 18, 20, 22, 23]},
-        {"concurso": 3744, "dezenas": [2, 4, 5, 7, 8, 10, 11, 13, 14, 16, 19, 21, 23, 24, 25]},
-        {"concurso": 3743, "dezenas": [1, 2, 3, 6, 8, 9, 12, 13, 15, 17, 18, 20, 21, 23, 25]},
-        {"concurso": 3742, "dezenas": [3, 4, 5, 7, 10, 11, 12, 14, 15, 16, 18, 19, 22, 24, 25]},
-        {"concurso": 3741, "dezenas": [1, 2, 4, 6, 8, 9, 11, 13, 14, 17, 18, 20, 21, 23, 24]},
-        {"concurso": 3740, "dezenas": [2, 3, 5, 7, 8, 10, 12, 13, 15, 16, 19, 21, 22, 24, 25]},
-        {"concurso": 3739, "dezenas": [1, 3, 4, 6, 9, 11, 12, 14, 15, 17, 18, 20, 23, 24, 25]},
-        {"concurso": 3738, "dezenas": [2, 4, 5, 7, 8, 10, 11, 13, 16, 17, 19, 21, 22, 23, 25]}
-    ];
+   let baseHistoricaCaixa = [];
+
+function mesclarConcursosNaBase(novosConcursos) {
+  const mapa = new Map();
+  [...novosConcursos, ...baseHistoricaCaixa].forEach((item) => {
+    const num = Number(item.concurso);
+    const dezenasOrdenadas = [...(item.dezenas || [])]
+      .map((d) => Number(d))
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 25)
+      .sort((a, b) => a - b);
+
+    if (num > 0 && dezenasOrdenadas.length === 15 && !mapa.has(num)) {
+      mapa.set(num, { concurso: num, dezenas: dezenasOrdenadas });
+    }
+  });
+
+  baseHistoricaCaixa = Array.from(mapa.values()).sort((a, b) => b.concurso - a.concurso);
+}
+
+function extrairConcursosHtmlCaixa(conteudoHtml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(conteudoHtml, "text/html");
+  const linhas = Array.from(doc.querySelectorAll("tr"));
+  const extraidos = [];
+
+  for (const tr of linhas) {
+    const celulas = Array.from(tr.querySelectorAll("td, th"))
+      .map((c) => c.textContent.trim())
+      .filter(Boolean);
+
+    if (celulas.length < 16) continue;
+
+    const numeroConcurso = celulas
+      .map((txt) => Number(txt.replace(/\D/g, "")))
+      .find((n) => Number.isInteger(n) && n >= 1 && n <= 20000);
+
+    const dezenas = [];
+    for (const txt of celulas) {
+      if (/^\d{1,2}$/.test(txt)) {
+        const n = Number(txt);
+        if (n >= 1 && n <= 25 && !dezenas.includes(n)) {
+          dezenas.push(n);
+        }
+      }
+    }
+
+    if (numeroConcurso && dezenas.length === 15) {
+      extraidos.push({
+        concurso: numeroConcurso,
+        dezenas: dezenas.sort((a, b) => a - b),
+      });
+    }
+  }
+
+  return extraidos;
+}
+
+async function importarHistoricoHtmlCaixa(event) {
+  const arquivo = event.target.files && event.target.files[0];
+  if (!arquivo) return;
+
+  const statusBadge = document.getElementById("statusBanco");
+  try {
+    const texto = await arquivo.text();
+    const concursosLidos = extrairConcursosHtmlCaixa(texto);
+
+    if (!concursosLidos.length) {
+      throw new Error("Nenhum concurso válido de 15 dezenas encontrado no HTML.");
+    }
+
+    mesclarConcursosNaBase(concursosLidos);
+    if (typeof renderizarTop3Sorteios === "function") {
+      renderizarTop3Sorteios();
+    }
+
+    if (statusBadge) {
+      statusBadge.innerHTML = `📂 Histórico importado: ${baseHistoricaCaixa.length} concursos na base`;
+      statusBadge.style.color = "var(--success-green)";
+    }
+  function extrairConcursosXmlOuHtmlCaixa(conteudoTexto) {
+  const parser = new DOMParser();
+  const ehXml = conteudoTexto.trim().startsWith("<?xml") || conteudoTexto.trim().startsWith("<");
+  const doc = parser.parseFromString(
+    conteudoTexto,
+    ehXml ? "application/xml" : "text/html"
+  );
+
+  const extraidos = [];
+
+  // 1. Tenta ler elementos/linhas agrupados (tags XML comuns ou <tr> em HTML)
+  const candidatos = Array.from(
+    doc.querySelectorAll("concurso, sorteio, resultado, linha, row, item, tr")
+  );
+
+  for (const no of candidatos) {
+    const textosFilhos = Array.from(no.children || [])
+      .map((el) => el.textContent.trim())
+      .filter(Boolean);
+
+    const listaOrigem = textosFilhos.length >= 15
+      ? textosFilhos
+      : no.textContent.trim().split(/[\s,;|]+/).filter(Boolean);
+
+    const numeroConcurso = listaOrigem
+      .map((txt) => Number(txt.replace(/\D/g, "")))
+      .find((n) => Number.isInteger(n) && n >= 1 && n <= 20000);
+
+    const dezenas = [];
+    for (const txt of listaOrigem) {
+      if (/^\d{1,2}$/.test(txt)) {
+        const n = Number(txt);
+        if (n >= 1 && n <= 25 && !dezenas.includes(n)) {
+          dezenas.push(n);
+        }
+      }
+    }
+
+    if (numeroConcurso && dezenas.length === 15) {
+      extraidos.push({
+        concurso: numeroConcurso,
+        dezenas: dezenas.sort((a, b) => a - b),
+      });
+    }
+  }
+
+  return extraidos;
+}
+
+async function importarHistoricoArquivoCaixa(event) {
+  const arquivo = event.target.files && event.target.files[0];
+  if (!arquivo) return;
+
+  const statusBadge = document.getElementById("statusBanco");
+  try {
+    const texto = await arquivo.text();
+    const concursosLidos = extrairConcursosXmlOuHtmlCaixa(texto);
+
+    if (!concursosLidos.length) {
+      throw new Error("Nenhum concurso válido de 15 dezenas encontrado no arquivo XML.");
+    }
+
+    mesclarConcursosNaBase(concursosLidos);
+    if (typeof renderizarTop3Sorteios === "function") {
+      renderizarTop3Sorteios();
+    }
+
+    if (statusBadge) {
+      statusBadge.innerHTML = `📂 Histórico XML importado: ${baseHistoricaCaixa.length} concursos na base`;
+      statusBadge.style.color = "var(--success-green)";
+    }
+  } catch (err) {
+    console.error("Erro ao importar arquivo:", err);
+    if (statusBadge) {
+      statusBadge.innerHTML = `⚠️ Falha ao ler arquivo: ${err.message}`;
+      statusBadge.style.color = "#fbbf24";
+    }
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function inicializarSeletorHistoricoArquivo() {
+  if (document.getElementById("inputHistoricoArquivo")) return;
+  const alvo = document.getElementById("statusBanco");
+  if (!alvo || !alvo.parentElement) return;
+
+  const wrapper = document.createElement("div");
+  wrapper.style.marginTop = "10px";
+  wrapper.innerHTML = `
+    <label for="inputHistoricoArquivo" style="display:inline-block; cursor:pointer; font-size:0.85rem; color:var(--accent-cyan);">
+      📂 Importar Histórico XML da Caixa
+    </label>
+    <input type="file" id="inputHistoricoArquivo" accept=".xml,.html,.htm" style="display:none;" />
+  `;
+  alvo.insertAdjacentElement("afterend", wrapper);
+  document
+    .getElementById("inputHistoricoArquivo")
+    .addEventListener("change", importarHistoricoArquivoCaixa);
+}
+
+window.addEventListener("DOMContentLoaded", inicializarSeletorHistoricoArquivo);
 
     let historicoGeracoes = [];
     let contadorGeracao = 0;
