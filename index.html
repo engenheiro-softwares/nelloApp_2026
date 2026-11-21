@@ -160,25 +160,24 @@
         }
         .btn-caixa-sync:hover { background: linear-gradient(135deg, #0369a1, #075985); transform: translateY(-1px); }
 
-        .vip-banner {
-            background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(56, 189, 248, 0.15));
-            border: 1px solid rgba(139, 92, 246, 0.4);
-            padding: 14px;
-            border-radius: 12px;
-            text-align: center;
-        }
-        .vip-banner h4 { color: #c084fc; font-size: 1rem; margin-bottom: 4px; font-weight: 700; }
-        .vip-banner p { color: var(--text-muted); font-size: 0.75rem; margin-bottom: 10px; }
-        
-        .btn-vip {
-            background: linear-gradient(135deg, #fbbf24, #d97706);
-            color: #070913;
-            border: none;
-            padding: 8px 14px;
-            font-weight: 800;
-            font-size: 0.8rem;
-            border-radius: 6px;
+        .btn-importar-xml {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-cyan);
+            border: 1px dashed rgba(56, 189, 248, 0.5);
+            padding: 10px 12px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            border-radius: 10px;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+        .btn-importar-xml:hover {
+            background: rgba(56, 189, 248, 0.2);
+            border-style: solid;
         }
 
         .toolbar {
@@ -225,6 +224,7 @@
             font-size: 0.8rem;
             text-align: center;
             font-weight: 600;
+            line-height: 1.4;
         }
 
         .history-list {
@@ -345,7 +345,7 @@
         <div class="panel-column">
             <div>
                 <h2>Painel VIP Pro</h2>
-                <p class="subtitle">Conectado ao JSON Oficial Caixa.gov.br</p>
+                <p class="subtitle">Conectado ao JSON Oficial Caixa.gov.br + Histórico XML</p>
             </div>
 
             <!-- PAINEL DOS 3 ÚLTIMOS SORTEIOS EM TEMPO REAL -->
@@ -360,6 +360,12 @@
             <button class="btn-caixa-sync" onclick="buscarDadosReaisCaixa()">
                 🔄 Sincronizar com Caixa.gov.br (API)
             </button>
+
+            <!-- Botão de Importação de Arquivo XML/HTML -->
+            <label for="inputHistoricoArquivo" class="btn-importar-xml">
+                📂 Importar Histórico XML da Caixa
+            </label>
+            <input type="file" id="inputHistoricoArquivo" accept=".xml,.html,.htm" style="display:none;" onchange="importarHistoricoArquivoCaixa(event)" />
 
             <div class="status-badge" id="statusBanco">
                 🌐 Conectando à API de Loterias...
@@ -403,201 +409,149 @@
 </div>
 
 <script>
-    // Base inicial atualizada com precisão (Iniciando no concurso 3747 e anteriores)
-   let baseHistoricaCaixa = [];
-
-function mesclarConcursosNaBase(novosConcursos) {
-  const mapa = new Map();
-  [...novosConcursos, ...baseHistoricaCaixa].forEach((item) => {
-    const num = Number(item.concurso);
-    const dezenasOrdenadas = [...(item.dezenas || [])]
-      .map((d) => Number(d))
-      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 25)
-      .sort((a, b) => a - b);
-
-    if (num > 0 && dezenasOrdenadas.length === 15 && !mapa.has(num)) {
-      mapa.set(num, { concurso: num, dezenas: dezenasOrdenadas });
-    }
-  });
-
-  baseHistoricaCaixa = Array.from(mapa.values()).sort((a, b) => b.concurso - a.concurso);
-}
-
-function extrairConcursosHtmlCaixa(conteudoHtml) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(conteudoHtml, "text/html");
-  const linhas = Array.from(doc.querySelectorAll("tr"));
-  const extraidos = [];
-
-  for (const tr of linhas) {
-    const celulas = Array.from(tr.querySelectorAll("td, th"))
-      .map((c) => c.textContent.trim())
-      .filter(Boolean);
-
-    if (celulas.length < 16) continue;
-
-    const numeroConcurso = celulas
-      .map((txt) => Number(txt.replace(/\D/g, "")))
-      .find((n) => Number.isInteger(n) && n >= 1 && n <= 20000);
-
-    const dezenas = [];
-    for (const txt of celulas) {
-      if (/^\d{1,2}$/.test(txt)) {
-        const n = Number(txt);
-        if (n >= 1 && n <= 25 && !dezenas.includes(n)) {
-          dezenas.push(n);
-        }
-      }
-    }
-
-    if (numeroConcurso && dezenas.length === 15) {
-      extraidos.push({
-        concurso: numeroConcurso,
-        dezenas: dezenas.sort((a, b) => a - b),
-      });
-    }
-  }
-
-  return extraidos;
-}
-
-async function importarHistoricoHtmlCaixa(event) {
-  const arquivo = event.target.files && event.target.files[0];
-  if (!arquivo) return;
-
-  const statusBadge = document.getElementById("statusBanco");
-  try {
-    const texto = await arquivo.text();
-    const concursosLidos = extrairConcursosHtmlCaixa(texto);
-
-    if (!concursosLidos.length) {
-      throw new Error("Nenhum concurso válido de 15 dezenas encontrado no HTML.");
-    }
-
-    mesclarConcursosNaBase(concursosLidos);
-    if (typeof renderizarTop3Sorteios === "function") {
-      renderizarTop3Sorteios();
-    }
-
-    if (statusBadge) {
-      statusBadge.innerHTML = `📂 Histórico importado: ${baseHistoricaCaixa.length} concursos na base`;
-      statusBadge.style.color = "var(--success-green)";
-    }
-  function extrairConcursosXmlOuHtmlCaixa(conteudoTexto) {
-  const parser = new DOMParser();
-  const ehXml = conteudoTexto.trim().startsWith("<?xml") || conteudoTexto.trim().startsWith("<");
-  const doc = parser.parseFromString(
-    conteudoTexto,
-    ehXml ? "application/xml" : "text/html"
-  );
-
-  const extraidos = [];
-
-  // 1. Tenta ler elementos/linhas agrupados (tags XML comuns ou <tr> em HTML)
-  const candidatos = Array.from(
-    doc.querySelectorAll("concurso, sorteio, resultado, linha, row, item, tr")
-  );
-
-  for (const no of candidatos) {
-    const textosFilhos = Array.from(no.children || [])
-      .map((el) => el.textContent.trim())
-      .filter(Boolean);
-
-    const listaOrigem = textosFilhos.length >= 15
-      ? textosFilhos
-      : no.textContent.trim().split(/[\s,;|]+/).filter(Boolean);
-
-    const numeroConcurso = listaOrigem
-      .map((txt) => Number(txt.replace(/\D/g, "")))
-      .find((n) => Number.isInteger(n) && n >= 1 && n <= 20000);
-
-    const dezenas = [];
-    for (const txt of listaOrigem) {
-      if (/^\d{1,2}$/.test(txt)) {
-        const n = Number(txt);
-        if (n >= 1 && n <= 25 && !dezenas.includes(n)) {
-          dezenas.push(n);
-        }
-      }
-    }
-
-    if (numeroConcurso && dezenas.length === 15) {
-      extraidos.push({
-        concurso: numeroConcurso,
-        dezenas: dezenas.sort((a, b) => a - b),
-      });
-    }
-  }
-
-  return extraidos;
-}
-
-async function importarHistoricoArquivoCaixa(event) {
-  const arquivo = event.target.files && event.target.files[0];
-  if (!arquivo) return;
-
-  const statusBadge = document.getElementById("statusBanco");
-  try {
-    const texto = await arquivo.text();
-    const concursosLidos = extrairConcursosXmlOuHtmlCaixa(texto);
-
-    if (!concursosLidos.length) {
-      throw new Error("Nenhum concurso válido de 15 dezenas encontrado no arquivo XML.");
-    }
-
-    mesclarConcursosNaBase(concursosLidos);
-    if (typeof renderizarTop3Sorteios === "function") {
-      renderizarTop3Sorteios();
-    }
-
-    if (statusBadge) {
-      statusBadge.innerHTML = `📂 Histórico XML importado: ${baseHistoricaCaixa.length} concursos na base`;
-      statusBadge.style.color = "var(--success-green)";
-    }
-  } catch (err) {
-    console.error("Erro ao importar arquivo:", err);
-    if (statusBadge) {
-      statusBadge.innerHTML = `⚠️ Falha ao ler arquivo: ${err.message}`;
-      statusBadge.style.color = "#fbbf24";
-    }
-  } finally {
-    event.target.value = "";
-  }
-}
-
-function inicializarSeletorHistoricoArquivo() {
-  if (document.getElementById("inputHistoricoArquivo")) return;
-  const alvo = document.getElementById("statusBanco");
-  if (!alvo || !alvo.parentElement) return;
-
-  const wrapper = document.createElement("div");
-  wrapper.style.marginTop = "10px";
-  wrapper.innerHTML = `
-    <label for="inputHistoricoArquivo" style="display:inline-block; cursor:pointer; font-size:0.85rem; color:var(--accent-cyan);">
-      📂 Importar Histórico XML da Caixa
-    </label>
-    <input type="file" id="inputHistoricoArquivo" accept=".xml,.html,.htm" style="display:none;" />
-  `;
-  alvo.insertAdjacentElement("afterend", wrapper);
-  document
-    .getElementById("inputHistoricoArquivo")
-    .addEventListener("change", importarHistoricoArquivoCaixa);
-}
-
-window.addEventListener("DOMContentLoaded", inicializarSeletorHistoricoArquivo);
-
+    let baseHistoricaCaixa = [];
     let historicoGeracoes = [];
     let contadorGeracao = 0;
 
-    // Renderiza os 3 últimos resultados na coluna esquerda
+    function mesclarBaseHistorica(novosConcursos) {
+        const mapaConcursos = new Map();
+
+        [...(novosConcursos || []), ...baseHistoricaCaixa].forEach((item) => {
+            if (!item) return;
+            const numero = Number(item.concurso);
+            const dezenasOrdenadas = [...(item.dezenas || [])]
+                .map((n) => parseInt(n, 10))
+                .filter((n) => Number.isInteger(n) && n >= 1 && n <= 25)
+                .sort((a, b) => a - b);
+
+            const dezenasUnicas = Array.from(new Set(dezenasOrdenadas));
+
+            if (Number.isInteger(numero) && numero > 0 && dezenasUnicas.length === 15 && !mapaConcursos.has(numero)) {
+                mapaConcursos.set(numero, {
+                    concurso: numero,
+                    dezenas: dezenasUnicas
+                });
+            }
+        });
+
+        baseHistoricaCaixa = Array.from(mapaConcursos.values())
+            .sort((a, b) => b.concurso - a.concurso);
+    }
+
+    function extrairDezenasDeTokens(tokens) {
+        const dezenas = [];
+        for (const raw of tokens) {
+            const limpo = String(raw).trim();
+            if (/^\d{1,2}$/.test(limpo)) {
+                const n = parseInt(limpo, 10);
+                if (n >= 1 && n <= 25 && !dezenas.includes(n)) {
+                    dezenas.push(n);
+                }
+            }
+        }
+        return dezenas.sort((a, b) => a - b);
+    }
+
+    function extrairConcursoDeTokens(tokens, dezenasEncontradas) {
+        const setDezenas = new Set(dezenasEncontradas);
+        for (const raw of tokens) {
+            const digitos = String(raw).replace(/\D/g, "");
+            if (!digitos) continue;
+            const num = parseInt(digitos, 10);
+            if (Number.isInteger(num) && num >= 1 && num <= 50000 && !setDezenas.has(num)) {
+                return num;
+            }
+        }
+        return null;
+    }
+
+    function extrairConcursosXmlOuHtmlCaixa(conteudoTexto) {
+        const parser = new DOMParser();
+        const textoTrim = conteudoTexto.trim();
+        const ehXml = textoTrim.startsWith("<?xml") || textoTrim.startsWith("<");
+        const doc = parser.parseFromString(
+            conteudoTexto,
+            ehXml ? "application/xml" : "text/html"
+        );
+
+        const extraidos = [];
+        const candidatos = Array.from(
+            doc.querySelectorAll("concurso, sorteio, resultado, linha, row, item, tr")
+        );
+
+        for (const no of candidatos) {
+            const textosFilhos = Array.from(no.children || [])
+                .map((el) => el.textContent.trim())
+                .filter(Boolean);
+
+            const attrsValores = Array.from(no.attributes || [])
+                .map((attr) => attr.value.trim())
+                .filter(Boolean);
+
+            const tokens = textosFilhos.length >= 15
+                ? [...attrsValores, ...textosFilhos]
+                : [...attrsValores, ...no.textContent.trim().split(/[\s,;|/-]+/).filter(Boolean)];
+
+            const dezenas = extrairDezenasDeTokens(tokens);
+            if (dezenas.length !== 15) continue;
+
+            const numeroConcurso = extrairConcursoDeTokens(tokens, dezenas);
+            if (numeroConcurso) {
+                extraidos.push({
+                    concurso: numeroConcurso,
+                    dezenas: dezenas
+                });
+            }
+        }
+
+        return extraidos;
+    }
+
+    async function importarHistoricoArquivoCaixa(event) {
+        const arquivo = event.target.files && event.target.files[0];
+        if (!arquivo) return;
+
+        const statusBadge = document.getElementById("statusBanco");
+        try {
+            const texto = await arquivo.text();
+            const concursosLidos = extrairConcursosXmlOuHtmlCaixa(texto);
+
+            if (!concursosLidos.length) {
+                throw new Error("Nenhum concurso válido de 15 dezenas encontrado no arquivo.");
+            }
+
+            mesclarBaseHistorica(concursosLidos);
+            renderizarTop3Sorteios();
+
+            if (statusBadge) {
+                statusBadge.innerHTML = `📂 Histórico importado: ${baseHistoricaCaixa.length} concursos na base`;
+                statusBadge.style.color = "var(--success-green)";
+            }
+        } catch (err) {
+            console.error("Erro ao importar arquivo:", err);
+            if (statusBadge) {
+                statusBadge.innerHTML = `⚠️ Falha ao ler arquivo: ${err.message}`;
+                statusBadge.style.color = "#fbbf24";
+            }
+        } finally {
+            event.target.value = "";
+        }
+    }
+
     function renderizarTop3Sorteios() {
         const container = document.getElementById('painelTop3Sorteios');
-        let html = '';
+        if (!container) return;
+
         const ultimos3 = baseHistoricaCaixa.slice(0, 3);
-        
+        if (!ultimos3.length) {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px;">Aguardando sincronização ou importação do histórico...</div>';
+            return;
+        }
+
+        let html = '';
         ultimos3.forEach((c, index) => {
-            let label = index === 0 ? "Último Sorteio Oficial" : `${index + 1}º Sorteio Anterior`;
-            let bolasHtml = c.dezenas.map(n => `<div class="caixa-mini-ball">${String(n).padStart(2, '0')}</div>`).join('');
+            const label = index === 0 ? "Último Sorteio Oficial" : `${index + 1}º Sorteio Anterior`;
+            const bolasHtml = c.dezenas.map(n => `<div class="caixa-mini-ball">${String(n).padStart(2, '0')}</div>`).join('');
             
             html += `
                 <div class="draw-card-caixa">
@@ -615,72 +569,62 @@ window.addEventListener("DOMContentLoaded", inicializarSeletorHistoricoArquivo);
         container.innerHTML = html;
     }
 
-   // Função real de requisição à API oficial da Caixa / Loterias
-async function consultarConcursoLotofacil(numeroConcurso = null) {
-  const baseUrl = "https://loteriascaixa-api.herokuapp.com/api/lotofacil";
-  const endpoint = numeroConcurso ? `${baseUrl}/${numeroConcurso}` : `${baseUrl}/latest`;
-  const response = await fetch(endpoint, { cache: "no-store" });
+    async function consultarConcursoLotofacil(numeroConcurso = null) {
+        const baseUrl = "https://loteriascaixa-api.herokuapp.com/api/lotofacil";
+        const endpoint = numeroConcurso ? `${baseUrl}/${numeroConcurso}` : `${baseUrl}/latest`;
+        const response = await fetch(endpoint, { cache: "no-store" });
 
-  if (!response.ok) {
-    throw new Error(`Erro de rede com API (${response.status})`);
-  }
+        if (!response.ok) {
+            throw new Error(`Erro de rede com API (${response.status})`);
+        }
 
-  const data = await response.json();
-  const concursoReal = Number(data.concurso ?? data.numero);
-  const dezenasReais = (data.dezenas || data.listaDezenas || [])
-    .map((n) => parseInt(n, 10))
-    .filter((n) => !Number.isNaN(n))
-    .sort((a, b) => a - b);
+        const data = await response.json();
+        const concursoReal = Number(data.concurso ?? data.numero);
+        const dezenasReais = (data.dezenas || data.listaDezenas || [])
+            .map((n) => parseInt(n, 10))
+            .filter((n) => !Number.isNaN(n))
+            .sort((a, b) => a - b);
 
-  if (!concursoReal || dezenasReais.length !== 15) {
-    throw new Error("Dados incompletos retornados pela API");
-  }
+        if (!concursoReal || dezenasReais.length !== 15) {
+            throw new Error("Dados incompletos retornados pela API");
+        }
 
-  return { concurso: concursoReal, dezenas: dezenasReais };
-}
-
-function mesclarBaseHistorica(sorteiosOficiais) {
-  const mapaConcursos = new Map();
-
-  [...sorteiosOficiais, ...baseHistoricaCaixa].forEach((item) => {
-    const numero = Number(item.concurso);
-    if (!mapaConcursos.has(numero)) {
-      mapaConcursos.set(numero, {
-        concurso: numero,
-        dezenas: [...item.dezenas].sort((a, b) => a - b),
-      });
+        return { concurso: concursoReal, dezenas: dezenasReais };
     }
-  });
 
-  baseHistoricaCaixa = Array.from(mapaConcursos.values())
-    .sort((a, b) => b.concurso - a.concurso);
-}
+    async function buscarDadosReaisCaixa() {
+        const statusBadge = document.getElementById("statusBanco");
+        if (statusBadge) {
+            statusBadge.innerHTML = "🔄 Consultando API oficial da Caixa...";
+            statusBadge.style.color = "#38bdf8";
+        }
 
-async function buscarDadosReaisCaixa() {
-  const statusBadge = document.getElementById("statusBanco");
-  statusBadge.innerHTML = "🔄 Consultando API oficial da Caixa...";
-  statusBadge.style.color = "#38bdf8";
+        try {
+            const ultimo = await consultarConcursoLotofacil();
+            const [anterior1, anterior2] = await Promise.all([
+                consultarConcursoLotofacil(ultimo.concurso - 1),
+                consultarConcursoLotofacil(ultimo.concurso - 2),
+            ]);
 
-  try {
-    const ultimo = await consultarConcursoLotofacil();
-    const [anterior1, anterior2] = await Promise.all([
-      consultarConcursoLotofacil(ultimo.concurso - 1),
-      consultarConcursoLotofacil(ultimo.concurso - 2),
-    ]);
+            mesclarBaseHistorica([ultimo, anterior1, anterior2]);
+            renderizarTop3Sorteios();
 
-    mesclarBaseHistorica([ultimo, anterior1, anterior2]);
-    renderizarTop3Sorteios();
+            if (statusBadge) {
+                statusBadge.innerHTML = `✅ Sincronizado: ${ultimo.concurso}, ${anterior1.concurso} e ${anterior2.concurso} (Base: ${baseHistoricaCaixa.length})`;
+                statusBadge.style.color = "var(--success-green)";
+            }
+        } catch (error) {
+            console.warn("Falha na consulta externa da API:", error);
+            renderizarTop3Sorteios();
+            if (statusBadge) {
+                statusBadge.innerHTML = baseHistoricaCaixa.length
+                    ? `⚠️ Falha na API externa — exibindo ${baseHistoricaCaixa.length} concursos na base`
+                    : "⚠️ Falha na API externa — importe o XML para carregar a base";
+                statusBadge.style.color = "#fbbf24";
+            }
+        }
+    }
 
-    statusBadge.innerHTML = `✅ Sincronizado: ${ultimo.concurso}, ${anterior1.concurso} e ${anterior2.concurso}`;
-    statusBadge.style.color = "var(--success-green)";
-  } catch (error) {
-    console.warn("Falha na consulta externa da API:", error);
-    renderizarTop3Sorteios();
-    statusBadge.innerHTML = "⚠️ Falha na API externa — exibindo base atual";
-    statusBadge.style.color = "#fbbf24";
-  }
-}
-           
     const primosFixos = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23]);
 
     function calcularAcertos(j, s) {
@@ -818,7 +762,6 @@ async function buscarDadosReaisCaixa() {
         }
     }
 
-    // Inicialização ao carregar a página e busca automática online
     renderizarTop3Sorteios();
     buscarDadosReaisCaixa();
 </script>
